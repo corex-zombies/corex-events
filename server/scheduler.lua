@@ -107,6 +107,10 @@ function CXE_TriggerEvent(eventType, opts)
         locationName = nil,
         ctx          = {},           -- freeform bucket handlers can use
         forced       = opts.forced or false,
+        -- Set of player ids that came within participation radius during the
+        -- event. Filled by the tracker thread; consumed by EndEvent so
+        -- corex-skills can award XP to whoever showed up.
+        participants = {},
     }
 
     ActiveEvents[state.id]    = state
@@ -141,10 +145,29 @@ function CXE_EndEvent(eventId, reason)
         end
     end
 
+    -- Materialize the participant set into a flat array and emit a server
+    -- event other resources (corex-skills) can listen to. We skip awarding
+    -- on 'cleared' / 'resource_stop' because those are admin/restart paths.
+    local finalReason = reason or 'completed'
+    if finalReason == 'completed' or finalReason == 'expired' then
+        local participants = {}
+        for src in pairs(state.participants or {}) do
+            participants[#participants + 1] = src
+        end
+        if #participants > 0 then
+            TriggerEvent('corex-events:server:eventCompleted', eventId, participants, state.type)
+        end
+    end
+
+    local participantCount = 0
+    if state.participants then
+        for _ in pairs(state.participants) do participantCount = participantCount + 1 end
+    end
+
     ActiveEvents[eventId] = nil
-    CXE_BroadcastEnd(eventId, reason or 'completed')
-    CXE_Debug('Info', ('Ended event %s (%s) · reason=%s'):format(
-        eventId, state.type, reason or 'completed'))
+    CXE_BroadcastEnd(eventId, finalReason)
+    CXE_Debug('Info', ('Ended event %s (%s) · reason=%s · participants=%d'):format(
+        eventId, state.type, finalReason, participantCount))
 end
 
 -- Fast tick loop · active events only (every 2s when events are live).
@@ -170,6 +193,51 @@ CreateThread(function()
             end
         end
         Wait(hasActive and 2000 or 10000)
+    end
+end)
+
+-- Participant tracker · proximity-based.
+-- Walks every active event and credits any player within radius as a
+-- participant. The participant set is consumed by CXE_EndEvent so
+-- corex-skills (or any other resource) can award XP / loot bonuses.
+local PARTICIPANT_RADIUS = 120.0   -- meters
+local PARTICIPANT_TICK   = 5000    -- ms
+
+local function GetEventCoords(state)
+    local loc = state.location
+    if not loc then return nil end
+    if loc.x and loc.y and loc.z then return loc.x, loc.y, loc.z end
+    if loc[1] then return loc[1], loc[2], loc[3] end
+    return nil
+end
+
+CreateThread(function()
+    while true do
+        Wait(PARTICIPANT_TICK)
+
+        local hasActive = false
+        for _, state in pairs(ActiveEvents) do
+            hasActive = true
+            local ex, ey, ez = GetEventCoords(state)
+            if ex then
+                local r2 = PARTICIPANT_RADIUS * PARTICIPANT_RADIUS
+                for _, idStr in ipairs(GetPlayers()) do
+                    local src = tonumber(idStr)
+                    if src then
+                        local ped = GetPlayerPed(src)
+                        if ped and ped ~= 0 then
+                            local pc = GetEntityCoords(ped)
+                            local dx, dy, dz = pc.x - ex, pc.y - ey, pc.z - ez
+                            if (dx * dx + dy * dy + dz * dz) <= r2 then
+                                state.participants[src] = true
+                            end
+                        end
+                    end
+                end
+            end
+        end
+
+        if not hasActive then Wait(10000) end
     end
 end)
 
