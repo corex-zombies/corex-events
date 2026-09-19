@@ -726,23 +726,86 @@ CreateThread(function()
 end)
 
 -- Teleport helper (admin command support) ─────────────────────
+local activeTeleport
+local function validTeleportCoord(value)
+    return type(value) == 'number' and value == value and math.abs(value) < 100000
+end
+
 RegisterNetEvent('corex-events:client:teleport', function(loc)
-    if not loc or not loc.x then return end
-    local Corex = exports['corex-core']:GetCoreObject()
-    local ped = (Corex and Corex.Functions and Corex.Functions.GetPed) and Corex.Functions.GetPed() or 0
-    if not ped or ped == 0 then return end
-    -- Request terrain around destination so we don't fall through the map
-    RequestCollisionAtCoord(loc.x, loc.y, loc.z)
-    local t = GetGameTimer()
-    while not HasCollisionLoadedAroundEntity(ped) and (GetGameTimer() - t) < 2500 do
-        Wait(50)
-    end
+    if source ~= 65535 or activeTeleport or type(loc) ~= 'table' then return end
+    if not validTeleportCoord(loc.x) or not validTeleportCoord(loc.y) or not validTeleportCoord(loc.z) then return end
+    local ped = PlayerPedId()
+    if not ped or ped == 0 or GetEntityHealth(ped) <= 100
+        or IsEntityPositionFrozen(ped) or IsPedInAnyVehicle(ped, false) then return end
+
+    local ticket = {ped=ped, origin=GetEntityCoords(ped)}
+    activeTeleport = ticket
+    FreezeEntityPosition(ped, true)
     SetEntityCoords(ped, loc.x, loc.y, loc.z + 0.5, false, false, false, false)
+    local placedOnGround = false
+    -- Checking collision before moving only checks the OLD location. Keep
+    -- the ped frozen at the destination until both collision and ground exist.
+    for _ = 1, 100 do
+        RequestCollisionAtCoord(loc.x, loc.y, loc.z)
+        Wait(50)
+        if activeTeleport ~= ticket then return end
+        if PlayerPedId() ~= ped or GetEntityHealth(ped) <= 100 then
+            activeTeleport = nil
+            return -- A respawn/death system owns the new ped/control state.
+        end
+        local found, ground = GetGroundZFor_3dCoord(loc.x, loc.y, loc.z + 100.0, false)
+        if found and validTeleportCoord(ground) and HasCollisionLoadedAroundEntity(ped) then
+            if not placedOnGround then
+                SetEntityCoords(ped, loc.x, loc.y, ground + 0.5, false, false, false, false)
+                placedOnGround = true
+                -- Ground height may differ from the configured event Z. Check
+                -- collision again after this move before releasing the ped.
+            else
+                SetEntityVelocity(ped, 0.0, 0.0, 0.0)
+                FreezeEntityPosition(ped, false)
+                activeTeleport = nil
+                return
+            end
+        end
+    end
+
+    local origin = ticket.origin
+    SetEntityCoords(ped, origin.x, origin.y, origin.z, false, false, false, false)
+    SetEntityVelocity(ped, 0.0, 0.0, 0.0)
+    for _ = 1, 100 do
+        RequestCollisionAtCoord(origin.x, origin.y, origin.z)
+        Wait(50)
+        if activeTeleport ~= ticket then return end
+        if PlayerPedId() ~= ped or GetEntityHealth(ped) <= 100 then activeTeleport = nil; return end
+        if HasCollisionLoadedAroundEntity(ped) then
+            FreezeEntityPosition(ped, false)
+            activeTeleport = nil
+            Debug('Error', 'Event teleport cancelled: destination ground did not load; returned to origin.')
+            return
+        end
+    end
+    Debug('Error', 'Event teleport cancelled: origin collision also unavailable. Player kept frozen for safety; reconnect to recover.')
+    activeTeleport = nil
 end)
 
 -- Resource stop cleanup ────────────────────────────────────────
 AddEventHandler('onResourceStop', function(res)
     if res ~= GetCurrentResourceName() then return end
+    if activeTeleport then
+        local ticket = activeTeleport
+        activeTeleport = nil
+        if PlayerPedId() == ticket.ped and GetEntityHealth(ticket.ped) > 100 then
+            local origin = ticket.origin
+            RequestCollisionAtCoord(origin.x, origin.y, origin.z)
+            SetEntityCoords(ticket.ped, origin.x, origin.y, origin.z, false, false, false, false)
+            SetEntityVelocity(ticket.ped, 0.0, 0.0, 0.0)
+            if HasCollisionLoadedAroundEntity(ticket.ped) then
+                FreezeEntityPosition(ticket.ped, false)
+            else
+                Debug('Error', 'Event teleport interrupted without origin collision. Player kept frozen for safety; reconnect to recover.')
+            end
+        end
+    end
     for crateId, ctx in pairs(SharedRewardCrates) do
         CXEC_CleanupRewardCrate(ctx)
         SharedRewardCrates[crateId] = nil

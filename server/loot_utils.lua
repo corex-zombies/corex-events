@@ -1,12 +1,17 @@
+-- Item definitions come from whichever inventory CoreX has. There is no bundled
+-- catalog behind this any more: carrying a copy of one inventory's item file
+-- meant this resource could not start at all once that inventory was deleted
+-- from disk, and the copy went stale the moment either side changed.
 local function GetItemData(name)
-    local ok, data = pcall(function()
-        return exports['corex-inventory']:GetItemData(name)
-    end)
-    if ok and data then return data end
-    local lo, up = string.lower(name), string.upper(name)
-    return (Items   and (Items[lo]   or Items[up]))
-        or (Weapons and (Weapons[lo] or Weapons[up]))
-        or (Ammo    and (Ammo[lo]    or Ammo[up]))
+    return CoreXInventoryBridge.GetItemDefinition(name)
+end
+
+--- Everything event loot needs about an item, whether or not the installed
+--- inventory has ever heard of it. An item nobody can describe still drops.
+local function DescribeItem(name)
+    local definition = GetItemData(name)
+    if type(definition) == 'table' then return definition end
+    return { label = name, image = 'default.png', rarity = 'common' }
 end
 
 local function RollTier(lootTable)
@@ -26,17 +31,15 @@ local function GenerateLoot(lootTable, countRange)
         local tier = RollTier(lootTable)
         if tier and #tier > 0 then
             local pick = tier[math.random(1, #tier)]
-            local data = GetItemData(pick.name)
-            if data then
-                loot[#loot + 1] = {
-                    name   = pick.name,
-                    count  = math.random(pick.min, pick.max),
-                    label  = data.label  or pick.name,
-                    image  = data.image  or 'default.png',
-                    rarity = data.rarity or 'common',
-                    taken  = false,
-                }
-            end
+            local data = DescribeItem(pick.name)
+            loot[#loot + 1] = {
+                name   = pick.name,
+                count  = math.random(pick.min, pick.max),
+                label  = data.label  or pick.name,
+                image  = data.image  or 'default.png',
+                rarity = data.rarity or 'common',
+                taken  = false,
+            }
         end
     end
     if #loot == 0 then
@@ -69,6 +72,7 @@ end
 
 CXE_Loot = {
     GetItemData = GetItemData,
+    DescribeItem = DescribeItem,
     RollTier = RollTier,
     GenerateLoot = GenerateLoot,
     RegisterContainer = RegisterContainer,

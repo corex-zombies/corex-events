@@ -125,42 +125,7 @@ function handler.update(state, patch)
     end)
 end
 
-local function SpawnExtractionZombies(eventId, data)
-    local count = data.count or 20
-    local spread = data.spread or 50.0
-    for _ = 1, count do
-        local angle = math.random() * math.pi * 2
-        local dist  = math.random(spread * 0.3, spread)
-        local x = data.location.x + math.cos(angle) * dist
-        local y = data.location.y + math.sin(angle) * dist
-        pcall(function()
-            exports['corex-zombies']:SpawnZombie(vector3(x, y, data.location.z))
-        end)
-    end
-end
 
-RegisterNetEvent('corex-events:client:extractionSpawn', function(eventId, data)
-    SpawnExtractionZombies(eventId, data)
-
-    CreateThread(function()
-        local cfg = Config.Extraction
-        for wave = 1, 3 do
-            Wait(math.floor((cfg.holdTime or 120) * 1000 / 4))
-            if not ActiveEventsC[eventId] then break end
-            local extra = math.random(4, 8)
-            local loc = data.location
-            for _ = 1, extra do
-                local angle = math.random() * math.pi * 2
-                local dist  = math.random(20.0, cfg.radius)
-                local x = loc.x + math.cos(angle) * dist
-                local y = loc.y + math.sin(angle) * dist
-                pcall(function()
-                    exports['corex-zombies']:SpawnZombie(vector3(x, y, loc.z))
-                end)
-            end
-        end
-    end)
-end)
 
 RegisterNetEvent('corex-events:client:extractionReward', function(rewardId, data)
     if not CXEC_GetSharedRewardCrateContext(rewardId) then

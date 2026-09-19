@@ -155,54 +155,7 @@ function handler.stop(state, reason)
     State[state.id] = nil
 end
 
--- Server → host client: spawn the horde ───────────────────────
-RegisterNetEvent('corex-events:client:outbreakSpawn', function(eventId, data)
-    if not data then return end
-    local center = ToVec3(data.location)
-    if not center then return end
-    local spread = data.spread or 55.0
-    local count  = data.count  or 20
 
-    CXEC_Debug('Info', ('Outbreak host · spawning %d zombies at %.1f, %.1f, %.1f'):format(
-        count, center.x, center.y, center.z))
-
-    CreateThread(function()
-        RequestCollisionAtCoord(center.x, center.y, center.z)
-        local localCorex = exports['corex-core']:GetCoreObject()
-        local localPed = (localCorex and localCorex.Functions and localCorex.Functions.GetPed) and localCorex.Functions.GetPed() or 0
-        local t0 = GetGameTimer()
-        while localPed ~= 0 and not HasCollisionLoadedAroundEntity(localPed) and (GetGameTimer() - t0) < 2000 do
-            Wait(50)
-        end
-
-        local spawned, failed = 0, 0
-        for i = 1, count do
-            local ang  = math.random() * 2 * math.pi
-            local dist = math.random() * spread
-            local x    = center.x + math.cos(ang) * dist
-            local y    = center.y + math.sin(ang) * dist
-            local z    = GroundZ(x, y, center.z + 20.0)
-
-            local ok, ped = pcall(function()
-                return exports['corex-zombies']:SpawnZombie(vector3(x, y, z + 0.3), nil)
-            end)
-            if ok and ped then
-                spawned = spawned + 1
-            else
-                failed = failed + 1
-                if failed <= 3 then
-                    -- Only log the first few failures; avoid console spam
-                    CXEC_Debug('Warn', ('SpawnZombie failed · err=%s'):format(tostring(ped)))
-                end
-            end
-
-            Wait(math.random(150, 250))
-        end
-
-        CXEC_Debug('Info', ('Outbreak spawn complete · %d succeeded · %d failed'):format(
-            spawned, failed))
-    end)
-end)
 
 -- Server → all clients: spawn reward crate at outbreak center ─
 RegisterNetEvent('corex-events:client:outbreakReward', function(eventId, data)

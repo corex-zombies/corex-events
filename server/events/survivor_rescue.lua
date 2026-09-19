@@ -40,64 +40,31 @@ function handler.start(state)
 end
 
 function handler.tick(state)
-    if os.time() < state.dropAt then return end
-
-    if state.ctx.hostSource and not IsHostAvailable(state.ctx.hostSource) then
-        CXE_Debug('Warn', ('Rescue %s host left, waiting for reassignment'):format(state.id))
-        state.ctx.hostSource = nil
-    end
-
-    if not state.ctx.hostSource then
-        local host = PickNearbyHost(state.location, 600.0)
-        if not host then
-            if (os.time() - state.ctx.waitStamp) > 10 then
-                CXE_Debug('Verbose', ('Rescue %s · waiting for player'):format(state.id))
-                state.ctx.waitStamp = os.time()
-            end
-            return
-        end
-        state.ctx.hostSource = host
-
-        if state.ctx.spawned then
-            CXE_Debug('Info', ('Rescue %s host reassigned=%d'):format(state.id, host))
-            return
-        end
-
-        state.ctx.spawned    = true
-
-        TriggerClientEvent('corex-events:client:survivorSpawn', host, state.id, {
-            location = { x = state.location.x, y = state.location.y, z = state.location.z },
-        })
-        CXE_BroadcastUpdate(state, { spawned = true })
-
-        state.ctx.currentWave = 1
-        state.ctx.nextWaveAt  = os.time() + 5
-        CXE_Debug('Info', ('Rescue %s · host=%d · wave 1/3'):format(state.id, host))
+    local now=os.time()
+    if now<state.dropAt then return end
+    local cfg=Config.SurvivorRescue
+    if not state.ctx.spawned then
+        local host=PickNearbyHost(state.location,600)
+        if not host then return end
+        state.ctx.spawned,state.ctx.hostSource=true,host
+        state.ctx.currentWave,state.ctx.nextWaveAt=1,now+5
+        TriggerClientEvent('corex-events:client:survivorSpawn',host,state.id,{
+            location={x=state.location.x,y=state.location.y,z=state.location.z}})
+        CXE_BroadcastUpdate(state,{spawned=true})
         return
     end
-
-    if state.ctx.currentWave > state.ctx.totalWaves then return end
-
-    if state.ctx.nextWaveAt and os.time() >= state.ctx.nextWaveAt then
-        local cfg = Config.SurvivorRescue
-        local waveCount = math.random(cfg.zombiesPerWave.min, cfg.zombiesPerWave.max)
-
-        TriggerClientEvent('corex-events:client:survivorWave', state.ctx.hostSource, state.id, {
-            wave   = state.ctx.currentWave,
-            count  = waveCount,
-            spread = cfg.radius,
-        })
-
-        CXE_Debug('Info', ('Rescue %s · wave %d/%d · %d zombies'):format(
-            state.id, state.ctx.currentWave, state.ctx.totalWaves, waveCount))
-
-        state.ctx.currentWave = state.ctx.currentWave + 1
-        state.ctx.nextWaveAt  = os.time() + math.floor(cfg.waveInterval / 1000)
-        state.ctx.waveSpawned = true
-    end
+    if state.ctx.currentWave>state.ctx.totalWaves or now<state.ctx.nextWaveAt then return end
+    local wave=state.ctx.currentWave
+    local count=math.random(cfg.zombiesPerWave.min,cfg.zombiesPerWave.max)
+    if not CXE_SpawnHorde(state,'wave:'..wave,count,cfg.radius) then return end
+    TriggerClientEvent('corex-events:client:survivorWave',-1,state.id,{wave=wave})
+    state.ctx.currentWave=wave+1
+    state.ctx.nextWaveAt=now+math.max(1,math.floor(cfg.waveInterval/1000))
+    state.ctx.waveSpawned=true
 end
 
 function handler.stop(state, reason)
+    CXE_ClearHordes(state)
     CXE_Loot.UnregisterContainer(state.id .. ':reward')
     CXE_UnregisterSharedRewardCrate(state.id .. ':reward')
     if reason ~= 'expired' and reason ~= 'cleared' then return end

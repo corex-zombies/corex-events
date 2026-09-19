@@ -21,41 +21,15 @@ function handler.start(state)
 end
 
 function handler.tick(state)
-    if state.ctx.spawned then return end
-    if os.time() < state.dropAt then return end
-
-    local host
-    for _, srcStr in ipairs(GetPlayers()) do
-        local src = tonumber(srcStr)
-        local ped = GetPlayerPed(src)
-        if ped and ped ~= 0 then
-            local d = #(GetEntityCoords(ped) - state.location)
-            if d < 600.0 then host = src break end
-        end
-    end
-
-    if not host then
-        if (os.time() - state.ctx.waitStamp) > 10 then
-            CXE_Debug('Verbose', ('Crash %s · waiting for player'):format(state.id))
-            state.ctx.waitStamp = os.time()
-        end
-        return
-    end
-
-    state.ctx.hostSource = host
-    state.ctx.spawned    = true
-
-    TriggerClientEvent('corex-events:client:crashSpawn', host, state.id, {
-        location = { x = state.location.x, y = state.location.y, z = state.location.z },
-        count    = state.ctx.zombieCount,
-        debris   = state.ctx.debrisCount,
-    })
-
-    CXE_BroadcastUpdate(state, { spawned = true })
-    CXE_Debug('Info', ('Crash %s · host=%d · spawned'):format(state.id, host))
+    if state.ctx.spawned or os.time()<state.dropAt then return end
+    local accepted,host=CXE_SpawnHorde(state,'initial',state.ctx.zombieCount,Config.AirdropCrash.radius)
+    if not accepted then return end
+    state.ctx.hostSource,state.ctx.spawned=host,true
+    CXE_BroadcastUpdate(state,{spawned=true})
 end
 
 function handler.stop(state, reason)
+    CXE_ClearHordes(state)
     CXE_Loot.UnregisterContainer(state.id .. ':reward')
     CXE_UnregisterSharedRewardCrate(state.id .. ':reward')
     if reason ~= 'expired' and reason ~= 'depleted' then return end

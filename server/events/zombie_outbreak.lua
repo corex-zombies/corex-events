@@ -24,59 +24,15 @@ function handler.start(state)
 end
 
 function handler.tick(state)
-    if state.ctx.spawned then return end
-    if os.time() < state.dropAt then return end
-
-    local host, distance = PickNearestPlayer(state.location, 600.0)
-    if not host then
-        if (os.time() - state.ctx.waitLogStamp) > 10 then
-            CXE_Debug('Verbose', ('Outbreak %s آ· no player within 600m آ· waiting'):format(state.id))
-            state.ctx.waitLogStamp = os.time()
-        end
-        return
-    end
-
-    local syncCfg = Config.Sync or {}
-    local sharedOk, sharedHostOrError = false, nil
-
-    if syncCfg.Enabled and syncCfg.SharedEventHordes then
-        sharedOk, sharedHostOrError = exports['corex-zombies']:CreateSharedBatch(
-            state.id,
-            vector3(state.location.x, state.location.y, state.location.z),
-            state.ctx.count,
-            state.ctx.spread
-        )
-
-        if not sharedOk then
-            CXE_Debug('Warn', ('Outbreak %s · shared batch failed (%s) · falling back to legacy host spawn'):format(
-                state.id,
-                tostring(sharedHostOrError)
-            ))
-        end
-    end
-
-    state.ctx.hostSource = sharedOk and sharedHostOrError or host
-    state.ctx.spawned    = true
-
-    if not sharedOk then
-        TriggerClientEvent('corex-events:client:outbreakSpawn', host, state.id, {
-            location = { x = state.location.x, y = state.location.y, z = state.location.z },
-            spread   = state.ctx.spread,
-            count    = state.ctx.count,
-        })
-    end
-
-    CXE_BroadcastUpdate(state, { spawned = true })
-    CXE_Debug('Info', ('Outbreak %s آ· host=%d آ· dist=%.0fm آ· spawning %d zombies%s'):format(
-        state.id,
-        state.ctx.hostSource,
-        distance,
-        state.ctx.count,
-        sharedOk and ' [shared]' or ''
-    ))
+    if state.ctx.spawned or os.time()<state.dropAt then return end
+    local accepted,host=CXE_SpawnHorde(state,'initial',state.ctx.count,state.ctx.spread)
+    if not accepted then return end
+    state.ctx.hostSource,state.ctx.spawned=host,true
+    CXE_BroadcastUpdate(state,{spawned=true})
 end
 
 function handler.stop(state, reason)
+    CXE_ClearHordes(state)
     if reason ~= 'expired' and reason ~= 'cleared' then return end
 
     local rewardId = state.id .. ':reward'

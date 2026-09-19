@@ -133,26 +133,7 @@ function handler.update(state, patch)
     end
 end
 
-local function SpawnConvoyZombies(eventId, data)
-    local count  = data.count or 12
-    local spread = data.spread or 25.0
 
-    for _ = 1, count do
-        local angle = math.random() * math.pi * 2
-        local dist  = math.random() * spread
-        local x = data.location.x + math.cos(angle) * dist
-        local y = data.location.y + math.sin(angle) * dist
-        local z = data.location.z
-
-        local ok, spawned = pcall(function()
-            return exports['corex-zombies']:SpawnZombie(vector3(x, y, z))
-        end)
-    end
-end
-
-RegisterNetEvent('corex-events:client:convoySpawn', function(eventId, data)
-    SpawnConvoyZombies(eventId, data)
-end)
 
 RegisterNetEvent('corex-events:client:convoyReward', function(rewardId, data)
     if CXEC_GetSharedRewardCrateContext(rewardId) then

@@ -236,6 +236,18 @@ function CXE_UnregisterSharedRewardCrate(crateId)
     SharedRewardCrates[tostring(crateId or '')] = nil
 end
 
+local function PublicContext(state)
+    local ctx = state.ctx or {}
+    return {
+        heading = ctx.heading,
+        debris = ctx.debrisCount,
+        currentWave = ctx.currentWave,
+        totalWaves = ctx.totalWaves,
+        zombieCount = ctx.zombieCount,
+        spread = ctx.spread,
+    }
+end
+
 function CXE_BroadcastStart(eventState)
     local payload = {
         id          = eventState.id,
@@ -251,6 +263,7 @@ function CXE_BroadcastStart(eventState)
         announceAt  = eventState.announceAt,
         dropAt      = eventState.dropAt,
         public      = eventState.public,
+        ctx         = PublicContext(eventState),
     }
     TriggerClientEvent('corex-events:client:eventStart', -1, payload)
     Debug('Info', ('Broadcast START · %s · type=%s · loc=%s'):format(
@@ -291,14 +304,7 @@ RegisterNetEvent('corex-events:server:requestSync', function()
                 public      = state.public,
                 dropped     = state.ctx and (state.ctx.dropped or state.ctx.spawned) or false,
                 spawned     = state.ctx and state.ctx.spawned or false,
-                ctx         = state.ctx and {
-                    heading       = state.ctx.heading,
-                    debris        = state.ctx.debris,
-                    currentWave   = state.ctx.currentWave,
-                    totalWaves    = state.ctx.totalWaves,
-                    zombieCount   = state.ctx.zombieCount,
-                    spread        = state.ctx.spread,
-                } or {},
+                ctx         = PublicContext(state),
             }
         end
     end

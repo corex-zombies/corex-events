@@ -140,49 +140,17 @@ function SpawnSurvivorPeds(eventId, loc)
 end
 
 RegisterNetEvent('corex-events:client:survivorSpawn', function(eventId, data)
-    local Corex = CXEC_GetCorex()
+    if source~=65535 or not ActiveEventsC[eventId] then return end
+    local Corex=CXEC_GetCorex()
     if not Corex then return end
-
-    local loc = data.location
-    SpawnSurvivorPeds(eventId, loc)
-
-    local cfg = Config.SurvivorRescue
-    local waveCount = math.random(cfg.zombiesPerWave.min, cfg.zombiesPerWave.max)
-    for _ = 1, waveCount do
-        local angle = math.random() * math.pi * 2
-        local dist  = math.random(15.0, cfg.radius)
-        local x = loc.x + math.cos(angle) * dist
-        local y = loc.y + math.sin(angle) * dist
-        pcall(function()
-            exports['corex-zombies']:SpawnZombie(vector3(x, y, loc.z))
-        end)
-    end
-
-    Corex.Functions.Notify('Survivors found! Protect them from incoming waves!', 'warning', 6000)
+    SpawnSurvivorPeds(eventId,data.location)
+    Corex.Functions.Notify('Survivors found! Protect them from incoming waves!','warning',6000)
 end)
 
 RegisterNetEvent('corex-events:client:survivorWave', function(eventId, data)
-    local Corex = CXEC_GetCorex()
-    if not Corex then return end
-
-    local state = ActiveEventsC[eventId]
-    if not state or not state.location then return end
-
-    local loc = state.location
-    local count = data.count or 6
-    local spread = data.spread or 30.0
-
-    for _ = 1, count do
-        local angle = math.random() * math.pi * 2
-        local dist  = math.random(spread * 0.5, spread)
-        local x = loc.x + math.cos(angle) * dist
-        local y = loc.y + math.sin(angle) * dist
-        pcall(function()
-            exports['corex-zombies']:SpawnZombie(vector3(x, y, loc.z))
-        end)
-    end
-
-    Corex.Functions.Notify(('Wave %d/%d incoming!'):format(data.wave, Config.SurvivorRescue.zombieWaves), 'error', 4000)
+    if source~=65535 or not ActiveEventsC[eventId] then return end
+    local Corex=CXEC_GetCorex()
+    if Corex then Corex.Functions.Notify(('Wave %d/%d incoming!'):format(data.wave,Config.SurvivorRescue.zombieWaves),'error',4000) end
 end)
 
 RegisterNetEvent('corex-events:client:survivorReward', function(rewardId, data)

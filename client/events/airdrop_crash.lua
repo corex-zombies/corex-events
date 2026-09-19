@@ -129,23 +129,7 @@ function handler.update(state, patch)
     Corex.Functions.Notify('Cargo plane crash detected! High-value loot in the wreckage.', 'warning', 6000)
 end
 
-local function SpawnCrashZombies(eventId, data)
-    local count = data.count or 10
-    for _ = 1, count do
-        local angle = math.random() * math.pi * 2
-        local dist  = math.random() * (data.spread or 40.0)
-        local x = data.location.x + math.cos(angle) * dist
-        local y = data.location.y + math.sin(angle) * dist
 
-        pcall(function()
-            exports['corex-zombies']:SpawnZombie(vector3(x, y, data.location.z))
-        end)
-    end
-end
-
-RegisterNetEvent('corex-events:client:crashSpawn', function(eventId, data)
-    SpawnCrashZombies(eventId, data)
-end)
 
 RegisterNetEvent('corex-events:client:crashReward', function(rewardId, data)
     if CXEC_GetSharedRewardCrateContext(rewardId) then

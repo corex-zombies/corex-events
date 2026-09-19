@@ -6,6 +6,29 @@
 
 local serverBootTime = os.time()
 
+-- Source IDs are recycled. Keep the opaque Core presence token so a later
+-- connection cannot inherit participation from an earlier occupant of the ID.
+local function CaptureParticipant(src)
+    local ok, session = pcall(function()
+        if GetResourceState('corex-core') ~= 'started' then return nil end
+        local player = exports['corex-core']:GetPlayer(src)
+        if not player or player.source ~= src or type(player.identifier) ~= 'string' then return nil end
+        local ped = GetPlayerPed(src)
+        if not ped or ped == 0 or GetEntityHealth(ped) <= 100 then return nil end
+        local bucket = GetPlayerRoutingBucket(src)
+        -- Built-in world events and their shared hordes exist in world zero.
+        if bucket ~= 0 then return nil end
+        for _, presence in ipairs(exports['corex-core']:GetPlayerPresence(player.identifier) or {}) do
+            if presence.source == src and type(presence.sessionToken) == 'string'
+                and #presence.sessionToken > 0 then
+                return {source=src, identifier=player.identifier, sessionToken=presence.sessionToken,
+                    ped=ped, bucket=bucket}
+            end
+        end
+    end)
+    return ok and session or nil
+end
+
 -- Eligibility ─────────────────────────────────────────────────
 local function IsTypeOnCooldown(eventType)
     local def = CorexEvents.Get(eventType)
@@ -107,9 +130,7 @@ function CXE_TriggerEvent(eventType, opts)
         locationName = nil,
         ctx          = {},           -- freeform bucket handlers can use
         forced       = opts.forced or false,
-        -- Set of player ids that came within participation radius during the
-        -- event. Filled by the tracker thread; consumed by EndEvent so
-        -- corex-skills can award XP to whoever showed up.
+        -- Sessions of living players that entered the participation radius.
         participants = {},
     }
 
@@ -135,7 +156,10 @@ end
 ---@param reason string|nil
 function CXE_EndEvent(eventId, reason)
     local state = ActiveEvents[eventId]
-    if not state then return end
+    if not state or state.ending then return end
+    -- A stop handler may yield or call EndEvent again. Consume the transition
+    -- before calling it so neither path can award the same event twice.
+    state.ending = true
 
     local handler = EventHandlers[state.type]
     if handler and type(handler.stop) == 'function' then
@@ -150,12 +174,17 @@ function CXE_EndEvent(eventId, reason)
     -- on 'cleared' / 'resource_stop' because those are admin/restart paths.
     local finalReason = reason or 'completed'
     if finalReason == 'completed' or finalReason == 'expired' then
-        local participants = {}
-        for src in pairs(state.participants or {}) do
-            participants[#participants + 1] = src
+        local participants, sessions = {}, {}
+        for src, previous in pairs(state.participants or {}) do
+            local current = CaptureParticipant(src)
+            if current and type(previous) == 'table' and current.identifier == previous.identifier
+                and current.sessionToken == previous.sessionToken then
+                participants[#participants + 1] = src
+                sessions[src] = current
+            end
         end
         if #participants > 0 then
-            TriggerEvent('corex-events:server:eventCompleted', eventId, participants, state.type)
+            TriggerEvent('corex-events:server:eventCompleted', eventId, participants, state.type, sessions)
         end
     end
 
@@ -229,7 +258,8 @@ CreateThread(function()
                             local pc = GetEntityCoords(ped)
                             local dx, dy, dz = pc.x - ex, pc.y - ey, pc.z - ez
                             if (dx * dx + dy * dy + dz * dz) <= r2 then
-                                state.participants[src] = true
+                                local session = CaptureParticipant(src)
+                                if session then state.participants[src] = session end
                             end
                         end
                     end
@@ -261,6 +291,10 @@ end)
 
 -- Cleanup on resource stop ────────────────────────────────────
 AddEventHandler('onResourceStop', function(res)
+    if res == 'corex-core' then
+        for _, state in pairs(ActiveEvents) do state.participants = {} end
+        return
+    end
     if res ~= GetCurrentResourceName() then return end
     for id, _ in pairs(ActiveEvents) do
         CXE_EndEvent(id, 'resource_stop')

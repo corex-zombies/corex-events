@@ -8,16 +8,16 @@ author 'ABUGIZA'
 version '2.0.0'
 
 shared_scripts {
-    '@corex-inventory/shared/items.lua',
-    '@corex-inventory/shared/weapons.lua',
     'config.lua',
     'shared/events.lua'
 }
 
 server_scripts {
+    'server/inventory_bridge.lua',
     'server/main.lua',
     'server/scheduler.lua',
     'server/loot_utils.lua',
+    'server/zombie_hordes.lua',
     'server/events/supply_drop.lua',
     'server/events/zombie_outbreak.lua',
     'server/events/convoy_ambush.lua',
@@ -45,9 +45,11 @@ files {
     'html/script.js'
 }
 
+-- No inventory is named here at all, in a dependency or in an include. This
+-- resource asks CoreX for whichever
+-- inventory is installed, so stopping that one must not stop this one.
 dependencies {
     'corex-core',
-    'corex-inventory',
     'corex-loot',
     'corex-zombies'
 }
